@@ -1,0 +1,126 @@
+---
+title: "ML Project"
+author: "Gopika Sreenilayam"
+date: "25 October 2014"
+output: html_document
+---
+Abstract
+---------------
+
+In this machine learning project, we study personal activity data of six participants in five different ways both correctly and incorrectly. Using the provided training data set, we create a machine learning model, subsequently evaluate this model, and then apply this model to the test data set.    
+
+The Data
+------------
+The data is obtained with the help of accelerometers fixed at four different locations in the body, i.e., the arm, forearm, belt, and dumbell, of six participants. The training and test sets are provided as part of the question. See the links for [the training data](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv) and [the testing data](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv). See the [source]( http://groupware.les.inf.puc-rio.br/har) of these data for further details. 
+
+Loading the Data:
+-----
+
+```{r loadData, echo=TRUE}
+#download and save data in the current directory
+setwd("/Users/gopika/Documents/Data_Science/Data_Science_Specialization/PracticalMachineLearning/")
+
+#If the training data file is not present in the current working directory, download it, else just use it and process it.
+loadTrainData<-function(){
+        if(!file.exists("pml-training.csv")){
+                fileUrl<-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv" 
+                download.file(fileUrl, destfile="./pml-training.csv", method="curl")
+                }
+}
+
+loadTestData<-function(){
+        if(!file.exists("pml-testing.csv")){
+                fileUrl<-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv" 
+                download.file(fileUrl, destfile="./pml-testing.csv", method="curl")
+                }
+}
+
+#load the training and test data
+loadTrainData()
+loadTestData()
+
+#read the training and test data sets
+training <- read.csv("pml-training.csv", stringsAsFactors=FALSE)
+testing <- read.csv("pml-testing.csv", stringsAsFactors=FALSE)
+
+```
+
+
+Exploratory Data Analysis
+-----------------------------
+Let's first load the required libraries. Note that we use parallel computing libraries to enhance the performace during computations. 
+```{r newchunk, results='hide'}
+library(caret)
+#library(e1071)
+#For parallel computations:
+library(doMC)
+#register the available cores( which is 2 in my system)
+registerDoMC(cores=2)
+```
+
+Before analysing the data, we should first clean the data. If there are any empty/missing or 'NA' values in the data, remove it from the data. Furthermore, remove also all the unnecessary feature variables. i.e., the columns `X`, `user_name`,  `raw_timestamp_part_1`,  `raw_timestamp_part_2`, `cvtd_timestamp`, `new_window`, `num_window` etc., are unwanted and hence will be removed. 
+
+
+```{r cleanData,echo=TRUE}
+#Here we write a function to clean the data
+
+cleanData<-function(data){
+        
+        #Let's first remove the unwanted columns
+        delCols<-c("X", "user_name", "raw_timestamp_part_1", "raw_timestamp_part_2", 
+             "cvtd_timestamp", "new_window", "num_window")
+        data <- data[, -which(colnames(data) %in% delCols)]
+        #Now let's remove NAs and missing values
+        noNAData<-!sapply(data, function(x) any(is.na(x)))
+        data<-data[,noNAData]
+        noMissData<-!sapply(data, function(x) any(x==""))
+        data<-data[,noMissData]    
+        
+        return (data)
+}
+#Clean the training and testing data using the cleanData function
+training<-cleanData(training)
+testing<-cleanData(testing)
+#Also, create `classe` factors in the training set.
+training$classe <- factor(training$classe)
+```
+We now created cleaned training and testing data, and use this data for prediction models. As a first step of model predictions, we can use the `trainControl` function to specifiy the type of resampling. i.e., `trainControl` is for generating parameters that later control the model optimization. The `trainControl` function here use 5-fold cross-validations as the resampling scheme.
+
+As a next step, we train the data using random forest algorithm where the tuning is achieved by 5-fold cross-validation. We selected random forest as it is a solid choice for nearly any prediction problem and also because this algorithm belongs to ensemble learning, which utilizes a aggregation of several models to solve a single prediction problem. 
+
+```{r predData,echo=TRUE}
+#use `trainControl` function to generate parameters for model optimization.
+fitControl <- trainControl(## 5-fold CV
+                           method = "cv",
+                           number = 5, 
+                           verboseIter=TRUE, allowParallel=TRUE)
+
+
+#Fit a random forest
+  fitrf <- train(classe ~ ., data = training, method = "rf", trControl = fitControl)
+
+#Now let's look at at the accuracy:
+PredAccuracy=round(max(head(fitrf$results)$Accuracy), 3)
+PredAccuracy
+```
+The prediction accuracy assessed using the cross validation data is 0.995. i.e, this model is 99.5% accurate and therefore, we can continue to the next step. 
+As  the last step, let's make predictions using the testing data. The final predicted values are in `PredTest`.
+
+```{r testpredData,echo=TRUE}
+PredTest <- predict(fitrf, testing) 
+PredTest
+```
+Finally, we provide the `PredTest` results to `answers` as prescribed in the coursera class website to solve 20 questions in the Project submission section.
+
+```{r submission,echo=TRUE}
+answers <-PredTest
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+pml_write_files(answers)
+```
+The above processing created 20 text files and these are submitted successfully as the answers to the 20 questions.
